@@ -2,7 +2,8 @@
 
 Podés descargar e instalar el paquete listo para usar (**APK**) en tu dispositivo Android directamente desde Expo Build:
 
-👉 📲 Descargar APK de GoTrack (Android)](https://expo.dev/artifacts/eas/sLgH2X3yK1mP4vL9-example.apk)
+👉 [Descargar APK de GoTrack](https://expo.dev/artifacts/eas/eALsISZOUEOwpCflIGbBs7lIUIgrdIh12kyIqjyQn1k.apk
+)
 
 ## 🛠️ Arquitectura del Proyecto
 
