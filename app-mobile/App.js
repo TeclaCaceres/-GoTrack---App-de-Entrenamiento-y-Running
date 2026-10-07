@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   AppState,
   StyleSheet,
@@ -186,141 +186,6 @@ const PulseRing = ({ inset = 12, color = 'rgba(215,254,71,0.32)', scaleMax = 1.0
 // Mapa estilizado del diseño (Pulse Performance): reticula punteada, ruta SVG gris+lima,
 // punto de posición con onda "ping" y pill de ritmo medio. Si hay puntos GPS reales,
 // dibuja la ruta real normalizada al viewBox del diseño.
-const RouteMap = ({ points = [], paceStr = '--:--', theme, isDarkMode, gpsOn = true, progress = 0.3 }) => {
-  const PAD = 18, W = 320, H = 176;
-  const normPt = (p) => (Array.isArray(p) ? { latitude: p[0], longitude: p[1] } : p);
-  const pts = points.map(normPt).filter((p) => typeof p.latitude === 'number' && typeof p.longitude === 'number');
-
-  // Trayecto estilizado del diseño: siempre se ve igual; el GPS solo avanza un marcador por él.
-  const cubic = (p0, c1, c2, p1, t) => {
-    const mt = 1 - t;
-    return [
-      mt * mt * mt * p0[0] + 3 * mt * mt * t * c1[0] + 3 * mt * t * t * c2[0] + t * t * t * p1[0],
-      mt * mt * mt * p0[1] + 3 * mt * mt * t * c1[1] + 3 * mt * t * t * c2[1] + t * t * t * p1[1],
-    ];
-  };
-  const DESIGN_SEGS = [
-    [[40, 130], [70, 120], [95, 140], [130, 110]],
-    [[130, 110], [165, 80], [180, 90], [220, 50]],
-    [[220, 50], [245, 25], [275, 40], [290, 35]],
-  ];
-  const designPts = [];
-  DESIGN_SEGS.forEach((seg, si) => {
-    for (let i = 0; i <= 14; i++) {
-      if (si < DESIGN_SEGS.length - 1 && i === 14) continue;
-      designPts.push(cubic(seg[0], seg[1], seg[2], seg[3], i / 14));
-    }
-  });
-  const arcLen = [];
-  let cum = 0;
-  for (let i = 1; i < designPts.length; i++) {
-    cum += Math.hypot(designPts[i][0] - designPts[i - 1][0], designPts[i][1] - designPts[i - 1][1]);
-    arcLen.push(cum);
-  }
-  const totalLen = cum;
-  const buildD = (list) => list.map((q, i) => (i === 0 ? `M${q[0].toFixed(1)} ${q[1].toFixed(1)}` : `L${q[0].toFixed(1)} ${q[1].toFixed(1)}`)).join(' ');
-  const interp = (i, dist) => {
-    const a = designPts[i], b = designPts[i + 1];
-    const segStart = i === 0 ? 0 : arcLen[i - 1];
-    const f = (dist - segStart) / ((arcLen[i] - segStart) || 1);
-    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-  };
-  const leadPts = (t) => {
-    const target = Math.max(0, Math.min(1, t)) * totalLen;
-    const res = [designPts[0]];
-    for (let i = 0; i < arcLen.length; i++) {
-      if (arcLen[i] <= target) res.push(designPts[i + 1]);
-      else {
-        if (target > (i === 0 ? 0 : arcLen[i - 1])) res.push(interp(i, target));
-        break;
-      }
-    }
-    return res;
-  };
-  const pointAt = (t) => {
-    const target = Math.max(0, Math.min(1, t)) * totalLen;
-    if (!totalLen || target <= 0) return designPts[0];
-    for (let i = 0; i < arcLen.length; i++) {
-      if (target <= arcLen[i]) {
-        if (target <= (i === 0 ? 0 : arcLen[i - 1])) return designPts[i];
-        return interp(i, target);
-      }
-    }
-    return designPts[designPts.length - 1];
-  };
-
-  const backD = buildD(designPts);
-  const leadD = buildD(leadPts(progress));
-  const marker = pointAt(progress);
-
-  const gridDots = [];
-  for (let ix = 0; ix <= W; ix += 14) for (let iy = 0; iy <= H; iy += 14) gridDots.push([ix, iy]);
-
-  // onda "ping" en el marcador
-  const ping = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(ping, { toValue: 1, duration: 1600, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.timing(ping, { toValue: 0, duration: 0, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [ping]);
-  const pingScale = ping.interpolate({ inputRange: [0, 1], outputRange: [0.4, 2.4] });
-  const pingOpacity = ping.interpolate({ inputRange: [0, 1], outputRange: [0.8, 0] });
-
-  const borderC = isDarkMode ? 'rgba(48,51,44,0.4)' : 'rgba(48,51,44,0.18)';
-  const pillBg = isDarkMode ? 'rgba(14,15,12,0.8)' : 'rgba(244,242,236,0.9)';
-  const pillBorder = isDarkMode ? 'rgba(48,51,44,0.5)' : 'rgba(48,51,44,0.18)';
-
-  return (
-    <View style={{ width: '100%', height: 176, borderRadius: 18, backgroundColor: theme.colors.mapSurface, borderWidth: 1, borderColor: borderC, overflow: 'hidden' }}>
-      <View style={{ flex: 1, position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
-        <Svg viewBox="0 0 320 176" width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0 }}>
-          {gridDots.map(([gx, gy]) => (
-            <Circle key={`${gx}-${gy}`} cx={gx} cy={gy} r={1} fill="#292D24" opacity={0.4} />
-          ))}
-          <Path d={backD} stroke="#373B30" strokeWidth={4} strokeLinecap="round" fill="none" />
-          <Path d={leadD} stroke={theme.colors.primary} strokeWidth={4} strokeLinecap="round" fill="none" />
-          <Circle cx={designPts[0][0]} cy={designPts[0][1]} r={5} fill="#8A8D82" />
-          <Circle cx={designPts[designPts.length - 1][0]} cy={designPts[designPts.length - 1][1]} r={6} fill={theme.colors.primary} />
-        </Svg>
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            width: 26,
-            height: 26,
-            marginLeft: -13,
-            marginTop: -13,
-            left: `${(marker[0] / W) * 100}%`,
-            top: `${(marker[1] / H) * 100}%`,
-            borderRadius: 13,
-            borderWidth: 1.5,
-            borderColor: theme.colors.primary,
-            opacity: pingOpacity,
-            transform: [{ scale: pingScale }],
-          }}
-        />
-        {!gpsOn || pts.length < 2 ? (
-          <View pointerEvents="none" style={{ position: 'absolute', top: 10, alignSelf: 'center', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: pillBg, borderWidth: 1, borderColor: pillBorder }}>
-            <Text style={{ fontSize: 10, letterSpacing: 1, color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>
-              {gpsOn ? 'BUSCANDO SEÑAL GPS…' : 'GPS APAGADO — ACTIVALO ARRIBA'}
-            </Text>
-          </View>
-        ) : null}
-        <View style={{ position: 'absolute', bottom: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: pillBg, borderWidth: 1, borderColor: pillBorder }}>
-          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent }} />
-          <Text style={{ fontSize: 10, letterSpacing: 0.6, color: theme.colors.onSurfaceVariant, fontVariant: ['tabular-nums'], fontFamily: F.sansMed }}>
-            Ritmo medio {paceStr} /km
-          </Text>
-        </View>
-      </View>
-    </View>
-  );
-};
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -371,6 +236,8 @@ export default function App() {
     goalType: 'km',
     goalValue: '20',
     goalPace: '05:30',
+    planGoal: '10K',
+    planLevel: 'intermedio',
   });
   const [isEditingProfile, setIsEditingProfile] = useState(false);
 
@@ -851,7 +718,7 @@ export default function App() {
   };
   const LEVEL_LABEL = { principiante: 'Principiante', intermedio: 'Intermedio', avanzado: 'Avanzado' };
 
-  const mapHTML = `
+  const mapHTML = useMemo(() => `
     <!DOCTYPE html>
     <html>
     <head>
@@ -860,37 +727,51 @@ export default function App() {
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
       <style>
         body { margin: 0; padding: 0; background: ${isDarkMode ? '#0E0F0C' : '#F4F2EC'}; }
-        #map { width: 100vw; height: 100vh; }
+        #map { width: 100vw; height: 100vh; background: ${isDarkMode ? '#171A15' : '#EDF0E8'}; }
         .leaflet-tile-pane { ${isDarkMode ? 'filter: invert(92%) hue-rotate(180deg) brightness(0.92) contrast(1.05);' : ''} }
+        .leaflet-control-attribution { font-size: 8px; opacity: 0.7; }
       </style>
     </head>
     <body>
       <div id="map"></div>
       <script>
-        let map, polyline, marker;
-        map = L.map('map', { zoomControl: false }).setView([-34.9214, -57.9545], 16);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
+        let map, polyline, marker, lastCenter = null;
+        map = L.map('map', { zoomControl: false }).setView([-34.9214, -57.9545], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+        const distM = function(a, b) {
+          const R = 6371000, toR = function(d){ return d * Math.PI / 180; };
+          const dLat = toR(b[0] - a[0]), dLon = toR(b[1] - a[1]);
+          const s = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toR(a[0])) * Math.cos(toR(b[0])) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          return 2 * R * Math.asin(Math.sqrt(s));
+        };
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
+        }
         document.addEventListener("message", function(event) {
           const data = JSON.parse(event.data);
-          if (data.type === 'UPDATE_LOCATIONS' && data.coords.length > 0) {
+          if (data.type === 'UPDATE_LOCATIONS' && data.coords && data.coords.length > 0) {
             const coords = data.coords;
             const lastCoord = coords[coords.length - 1];
-
             if (!polyline) {
-              polyline = L.polyline(coords, { color: '#D7FE47', weight: 5 }).addTo(map);
-              marker = L.marker(lastCoord).addTo(map);
+              polyline = L.polyline(coords, { color: '#D7FE47', weight: 5, opacity: 0.95 }).addTo(map);
+              marker = L.circleMarker(lastCoord, { radius: 7, color: '#0E0F0C', weight: 2, fillColor: '#D7FE47', fillOpacity: 1 }).addTo(map);
+              try { map.fitBounds(L.latLngBounds(coords), { padding: [44, 44] }); } catch (e) { map.setView(lastCoord, 16); }
             } else {
               polyline.setLatLngs(coords);
               marker.setLatLng(lastCoord);
+              const base = lastCenter || lastCoord;
+              if (distM(base, lastCoord) > 12) {
+                map.panTo(lastCoord);
+                lastCenter = lastCoord;
+              }
             }
-            map.setView(lastCoord);
           }
         });
       </script>
     </body>
     </html>
-  `;
+  `, [isDarkMode]);
 
   const renderRunScreen = () => {
     const { main, cents } = formatTimeRunParts(elapsedTime);
@@ -912,6 +793,8 @@ export default function App() {
     const sphereBg = isDarkMode ? 'rgba(27,29,24,0.15)' : 'rgba(255,255,255,0.3)';
     const trackStroke = isDarkMode ? 'rgba(48,51,44,0.3)' : 'rgba(48,51,44,0.15)';
     const cardBorder = isDarkMode ? 'rgba(48,51,44,0.5)' : 'rgba(48,51,44,0.18)';
+    const mapPillBg = isDarkMode ? 'rgba(14,15,12,0.82)' : 'rgba(244,242,236,0.92)';
+    const mapPillBorder = isDarkMode ? 'rgba(48,51,44,0.5)' : 'rgba(48,51,44,0.2)';
 
     return (
       <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
@@ -978,7 +861,38 @@ export default function App() {
               </View>
               <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.onSurface, fontVariant: ['tabular-nums'], fontFamily: F.sansSem }}>{distKm.toFixed(2)} km</Text>
             </View>
-            <RouteMap points={locationList} paceStr={paceStr} theme={theme} isDarkMode={isDarkMode} gpsOn={gpsEnabled} progress={gpsEnabled && distKm > 0 ? Math.min(1, distKm / 5) : 0.28} />
+            <View style={{ borderRadius: 18, overflow: 'hidden', height: 200, position: 'relative', backgroundColor: theme.colors.mapSurface, borderWidth: 1, borderColor: cardBorder }}>
+              <WebView
+                ref={webViewRef}
+                source={{ html: mapHTML }}
+                style={{ flex: 1, backgroundColor: 'transparent' }}
+                originWhitelist={['*']}
+                javaScriptEnabled
+                domStorageEnabled
+                scrollEnabled={false}
+                onMessage={(event) => {
+                  try {
+                    const data = JSON.parse(event.nativeEvent.data);
+                    if (data.type === 'READY' && webViewRef.current && locationList.length > 0) {
+                      webViewRef.current.postMessage(JSON.stringify({ type: 'UPDATE_LOCATIONS', coords: locationList }));
+                    }
+                  } catch (e) {}
+                }}
+              />
+              {!gpsEnabled ? (
+                <View pointerEvents="none" style={{ position: 'absolute', top: 10, alignSelf: 'center', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: mapPillBg, borderWidth: 1, borderColor: mapPillBorder }}>
+                  <Text style={{ fontSize: 10, letterSpacing: 1, color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>NO GPS — ACTIVALO ARRIBA</Text>
+                </View>
+              ) : locationList.length < 2 ? (
+                <View pointerEvents="none" style={{ position: 'absolute', top: 10, alignSelf: 'center', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: mapPillBg, borderWidth: 1, borderColor: mapPillBorder }}>
+                  <Text style={{ fontSize: 10, letterSpacing: 1, color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>BUSCANDO SEÑAL GPS…</Text>
+                </View>
+              ) : null}
+              <View pointerEvents="none" style={{ position: 'absolute', bottom: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: mapPillBg, borderWidth: 1, borderColor: mapPillBorder }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.accent }} />
+                <Text style={{ fontSize: 10, letterSpacing: 0.6, color: theme.colors.onSurfaceVariant }}>Ritmo medio {paceStr} /km</Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -1313,6 +1227,39 @@ export default function App() {
     });
     const semanaKm = weekKmTotal(history);
     const semanaSesiones = history.filter((h) => h.date && Date.now() - new Date(h.date).getTime() < 7 * 24 * 3600 * 1000).length;
+    // Gráfico de la última semana (7 días)
+    const dayNames = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400000);
+      const kmDay = history
+        .filter((h) => h.date && new Date(h.date).toDateString() === d.toDateString())
+        .reduce((a, h) => a + kmOfRun(h), 0);
+      days.push({ label: dayNames[d.getDay()], km: kmDay, today: i === 0 });
+    }
+    const maxDayKm = Math.max(1, ...days.map((d) => d.km));
+    const maxDist = history.reduce((a, h) => Math.max(a, kmOfRun(h)), 0);
+    // Plan de entrenamiento según objetivo y nivel
+    const PLANS = {
+      '5K': {
+        principiante: ['Rodaje suave · 25′', 'Caminata + trote · 20′', 'Rodaje + 4×1′ rápido', 'Descanso activo'],
+        intermedio: ['Rodaje · 30′', 'Series 6×400 m', 'Rodaje · 35′', 'Trote largo · 45′'],
+        avanzado: ['Rodaje · 35′', 'Series 8×400 m', 'Tempo · 20′', 'Largo · 50′'],
+      },
+      '10K': {
+        principiante: ['Rodaje · 30′', 'Series 4×200 m', 'Rodaje · 35′', 'Largo · 40′'],
+        intermedio: ['Rodaje · 40′', 'Series 6×800 m', 'Tempo · 25′', 'Largo · 60′'],
+        avanzado: ['Rodaje · 45′', 'Series 8×800 m', 'Tempo · 30′', 'Largo · 75′'],
+      },
+      '21K': {
+        principiante: ['Rodaje · 35′', 'Series 4×400 m', 'Rodaje · 40′', 'Largo · 55′'],
+        intermedio: ['Rodaje · 45′', 'Series 6×1000 m', 'Tempo · 30′', 'Largo · 90′'],
+        avanzado: ['Rodaje · 50′', 'Series 10×800 m', 'Tempo · 40′', 'Largo · 110′'],
+      },
+    };
+    const planGoal = PLANS[profile.planGoal] ? profile.planGoal : '10K';
+    const planLevel = PLANS[planGoal][profile.planLevel] ? profile.planLevel : 'intermedio';
+    const planSessions = PLANS[planGoal][planLevel];
     const rows = [
       [
         { label: 'KM TOTALES', value: totalKm.toFixed(1), suffix: '' },
@@ -1341,6 +1288,70 @@ export default function App() {
             <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.onPrimary, opacity: 0.75, fontFamily: F.sansMed }}>{semanaSesiones} sesiones</Text>
           </View>
         </View>
+
+        {/* Análisis avanzado */}
+        <View style={{ borderRadius: 24, backgroundColor: theme.colors.surface, padding: 18, borderWidth: 1, borderColor: theme.colors.outline, marginBottom: 12 }}>
+          <Text style={{ fontFamily: F.heading, fontSize: 16, fontWeight: '600', color: theme.colors.onSurface, marginBottom: 4 }}>Análisis</Text>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 14 }}>Tu actividad de la última semana</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 84 }}>
+            {days.map((d, idx) => (
+              <View key={idx} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end', marginHorizontal: 3 }}>
+                <View style={{ height: Math.max(4, (d.km / maxDayKm) * 62), width: '100%', maxWidth: 22, borderRadius: 6, backgroundColor: d.km > 0 ? (d.today ? theme.colors.primary : 'rgba(215,254,71,0.45)') : theme.colors.surfaceVariant }} />
+                <Text style={{ fontSize: 9, marginTop: 6, color: d.today ? theme.colors.primary : theme.colors.onSurfaceVariant, fontWeight: d.today ? '700' : '400', fontFamily: F.sansMed }}>{d.label}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: theme.colors.outline, marginTop: 16, paddingTop: 14 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 9, letterSpacing: 1.4, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, marginBottom: 6, fontFamily: F.sansMed }}>MAYOR DISTANCIA</Text>
+              <Text style={{ fontFamily: F.headingBold, fontSize: 16, fontWeight: '700', letterSpacing: -0.3, color: theme.colors.onSurface, fontVariant: ['tabular-nums'] }}>{maxDist.toFixed(1)} km</Text>
+            </View>
+            <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: theme.colors.outline, paddingLeft: 12 }}>
+              <Text style={{ fontSize: 9, letterSpacing: 1.4, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, marginBottom: 6, fontFamily: F.sansMed }}>MEJOR RITMO</Text>
+              <Text style={{ fontFamily: F.headingBold, fontSize: 16, fontWeight: '700', letterSpacing: -0.3, color: theme.colors.onSurface, fontVariant: ['tabular-nums'] }}>{formatPace(bestPaceSec)} /km</Text>
+            </View>
+            <View style={{ flex: 1, borderLeftWidth: 1, borderLeftColor: theme.colors.outline, paddingLeft: 12 }}>
+              <Text style={{ fontSize: 9, letterSpacing: 1.4, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, marginBottom: 6, fontFamily: F.sansMed }}>RÉCORD SEMANA</Text>
+              <Text style={{ fontFamily: F.headingBold, fontSize: 16, fontWeight: '700', letterSpacing: -0.3, color: theme.colors.onSurface, fontVariant: ['tabular-nums'] }}>{semanaKm.toFixed(1)} km</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Plan de entrenamiento */}
+        <View style={{ borderRadius: 24, backgroundColor: theme.colors.surface, padding: 18, borderWidth: 1, borderColor: theme.colors.outline, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <Text style={{ fontFamily: F.heading, fontSize: 16, fontWeight: '600', color: theme.colors.onSurface }}>Plan de entrenamiento</Text>
+            <Ionicons name="calendar-outline" size={16} color={theme.colors.primary} />
+          </View>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>Una semana tipo según tu objetivo y nivel</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            {['5K', '10K', '21K'].map((g) => (
+              <TouchableOpacity key={g} activeOpacity={0.8} onPress={() => setProfile({ ...profile, planGoal: g })}
+                style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: planGoal === g ? theme.colors.primary : theme.colors.surfaceVariant, borderWidth: 1, borderColor: planGoal === g ? theme.colors.primary : theme.colors.outline }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: planGoal === g ? theme.colors.onPrimary : theme.colors.onSurface, fontFamily: F.sansBold }}>{g}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+            {['principiante', 'intermedio', 'avanzado'].map((lv) => (
+              <TouchableOpacity key={lv} activeOpacity={0.8} onPress={() => setProfile({ ...profile, planLevel: lv })}
+                style={{ flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: planLevel === lv ? theme.colors.surfaceVariant : 'transparent', borderWidth: 1, borderColor: planLevel === lv ? theme.colors.primary : 'transparent' }}>
+                <Text style={{ fontSize: 9, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase', color: planLevel === lv ? theme.colors.primary : theme.colors.onSurfaceVariant, fontFamily: F.sansSem }}>{LEVEL_LABEL[lv]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={{ gap: 8 }}>
+            {planSessions.map((s, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, backgroundColor: theme.colors.surfaceVariant, paddingHorizontal: 12, paddingVertical: 10 }}>
+                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: idx === 0 ? theme.colors.primary : 'transparent', borderWidth: 1.5, borderColor: idx === 0 ? theme.colors.primary : theme.colors.outline, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: idx === 0 ? theme.colors.onPrimary : theme.colors.onSurfaceVariant, fontFamily: F.sansBold }}>{idx + 1}</Text>
+                </View>
+                <Text style={{ flex: 1, fontSize: 13, color: theme.colors.onSurface, fontFamily: F.sansMed }}>{s}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
         <View style={{ borderRadius: 24, backgroundColor: theme.colors.surface, padding: 18, borderWidth: 1, borderColor: theme.colors.outline }}>
           <Text style={{ fontFamily: F.heading, fontSize: 16, fontWeight: '600', color: theme.colors.onSurface, marginBottom: 14 }}>Tus números</Text>
           {rows.map((row, rIdx) => (
