@@ -43,3 +43,12 @@ Monorepo con dos paquetes:
 cd app-mobile
 npx eas-cli@latest build --platform android --profile preview
 ```
+
+## 🔒 Seguridad
+
+El repo es **público** a propósito (portfolio), así que la protección vive en la nube:
+
+- **Anon key pública por diseño** (Supabase). No es un secreto: lo que sí es secreto son las *service role keys* (nunca commiteadas) y la contraseña del proyecto.
+- **RLS por usuario**: las carreras con `user_id` solo las ve su dueño (`auth.uid()`).
+- **RLS con secreto por dispositivo**: sin cuenta, cada instalación tiene un `device_secret` que la app manda en el header `x-device-secret`. Con la anon key sola no se puede leer, insertar, modificar ni borrar nada del modo dispositivo (`supabase/security_device_secret.sql`).
+- El backend Express local (`gotrack-backend`) queda **fuera de internet**: si algún día se despliega, requiere API key + CORS restringido primero.
