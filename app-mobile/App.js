@@ -358,8 +358,32 @@ export default function App() {
     await loadDatabaseRuns();
     // Respaldo en la nube: bajá lo que haya y unilo con lo local
     const cloud = await pullRunsFromCloud();
-    if (cloud && cloud.length > 0) {
+    if (cloud) {
       setHistory((prev) => mergeRunsLists(prev, cloud));
+      backfillLocalRunsToCloud(cloud);
+    }
+  };
+
+  const backfillLocalRunsToCloud = async (cloud) => {
+    if (!supabase || !cloud) return;
+    const cloudIds = new Set(cloud.map((r) => r.id));
+    let local = [];
+    if (dbRef.current) {
+      try {
+        local = dbRef.current.getAllSync('SELECT * FROM runs');
+      } catch (e) {
+        console.error('Error leyendo SQLite para backfill', e);
+      }
+    }
+    if (local.length === 0) {
+      try {
+        const raw = await AsyncStorage.getItem('@gotrack_runs');
+        if (raw) local = JSON.parse(raw);
+      } catch (e) {}
+    }
+    local.filter((r) => !cloudIds.has(r.id)).forEach((r) => pushRunToCloud(r));
+    if (supabase && local.filter((r) => !cloudIds.has(r.id)).length > 0) {
+      console.log(`GoTrack: subiendo ${local.filter((r) => !cloudIds.has(r.id)).length} carreras al respaldo en la nube`);
     }
   };
 
