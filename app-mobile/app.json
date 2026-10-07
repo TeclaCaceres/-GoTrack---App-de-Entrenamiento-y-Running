@@ -26,7 +26,14 @@
       "expo-sqlite",
       "expo-audio",
       "expo-sharing",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "GoTrack usa tus fotos para que elijas tu avatar de perfil.",
+          "cameraPermission": "GoTrack accede a la cámara para tu avatar de perfil."
+        }
+      ]
     ],
     "extra": {
       "eas": {

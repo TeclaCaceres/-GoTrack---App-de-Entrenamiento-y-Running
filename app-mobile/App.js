@@ -11,6 +11,7 @@ import {
   Animated,
   Easing,
   useWindowDimensions,
+  Image,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
@@ -21,6 +22,7 @@ import { JetBrainsMono_400Regular, JetBrainsMono_500Medium, JetBrainsMono_600Sem
 import Svg, { Circle, Path } from 'react-native-svg';
 import * as Speech from 'expo-speech';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
 import { Pedometer } from 'expo-sensors';
 import * as SQLite from 'expo-sqlite';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -142,6 +144,12 @@ const LIGHT = {
 
 const ACTIVE_WORKOUT_KEY = '@gotrack_active_workout';
 
+const META_CONF = {
+  DISTANCIA: { icon: 'navigate-outline', subtitle: 'Cuántos km por semana', unit: 'km', chips: ['10', '20', '30', '40', '50'], placeholder: 'Ej: 20', keyboard: 'numeric' },
+  RITMO: { icon: 'speedometer-outline', subtitle: 'Ritmo objetivo (mm:ss)', unit: '/km', chips: ['04:30', '05:00', '05:30', '06:00'], placeholder: 'Ej: 05:30', keyboard: 'default' },
+  FRECUENCIA: { icon: 'calendar-outline', subtitle: 'Sesiones por semana', unit: 'veces', chips: ['2', '3', '4', '5'], placeholder: 'Ej: 3', keyboard: 'numeric' },
+};
+
 // Aros animados (identidad Pulse Performance: anillos en overlays y esfera)
 const SpinRing = ({ inset = 8, color = 'rgba(215,254,71,0.22)', duration = 9000 }) => {
   const value = useRef(new Animated.Value(0)).current;
@@ -229,6 +237,7 @@ export default function App() {
     height: '175',
     weight: '70',
     avatar: '🏃‍♂️',
+    avatarPhoto: null,
     bio: 'Entrenando para mi mejor marca personal.',
     age: '',
     city: '',
@@ -238,8 +247,14 @@ export default function App() {
     goalPace: '05:30',
     planGoal: '10K',
     planLevel: 'intermedio',
+    metaDist: '',
+    metaRitmo: '',
+    metaFrec: '',
   });
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [metaModal, setMetaModal] = useState(null);
+  const [metaDraft, setMetaDraft] = useState('');
+  const [newsScroll, setNewsScroll] = useState(0);
 
   const startTimeRef = useRef(0);
   const accumulatedTimeRef = useRef(0);
@@ -268,6 +283,42 @@ export default function App() {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     };
   }, []);
+
+  const pickAvatarPhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permiso de fotos', 'Necesitamos acceso a tus fotos para elegir el avatar.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setProfile((prev) => ({ ...prev, avatarPhoto: result.assets[0].uri }));
+      }
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo cargar la foto.');
+    }
+  };
+
+  const openMetaEditor = (key) => {
+    setMetaDraft(
+      key === 'DISTANCIA' ? profile.metaDist : key === 'RITMO' ? profile.metaRitmo : profile.metaFrec
+    );
+    setMetaModal(key);
+  };
+
+  const saveMeta = () => {
+    const val = metaDraft.trim();
+    if (metaModal === 'DISTANCIA') setProfile({ ...profile, metaDist: val });
+    if (metaModal === 'RITMO') setProfile({ ...profile, metaRitmo: val });
+    if (metaModal === 'FRECUENCIA') setProfile({ ...profile, metaFrec: val });
+    setMetaModal(null);
+  };
 
   const initDatabase = async () => {
     try {
@@ -1004,17 +1055,26 @@ export default function App() {
     const homeWeekKm = weekKmTotal(history);
     const homeGoalKm = parseFloat(profile.goalValue) || 1;
     const metas = [
-      { key: 'DISTANCIA', icon: 'navigate-outline' },
-      { key: 'RITMO', icon: 'speedometer-outline' },
-      { key: 'FRECUENCIA', icon: 'calendar-outline' },
+      { key: 'DISTANCIA', icon: 'navigate-outline', value: profile.metaDist ? `${profile.metaDist} km` : null },
+      { key: 'RITMO', icon: 'speedometer-outline', value: profile.metaRitmo ? `${profile.metaRitmo} /km` : null },
+      { key: 'FRECUENCIA', icon: 'calendar-outline', value: profile.metaFrec ? `${profile.metaFrec} por sem.` : null },
+    ];
+    const novedades = [
+      { emoji: '🗺️', title: 'Mapa GPS en vivo', desc: 'Seguí tu ruta dibujándose sobre un mapa real mientras corrés. Funciona con o sin datos.', tag: 'NUEVO' },
+      { emoji: '📊', title: 'Análisis y planes', desc: 'Km por día, récords y plan de entrenamiento 5K, 10K o 21K según tu nivel.', tag: 'NUEVO' },
+      { emoji: '🌐', title: 'Comunidad', desc: 'Pronto: agregá tu comunidad, sumá kilómetros y entrená en equipo.', tag: 'PRONTO' },
     ];
     return (
       <ScrollView contentContainerStyle={{ paddingBottom: 150 }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 28, paddingBottom: 22 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.surfaceVariant, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 22 }}>{profile.avatar}</Text>
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.surfaceVariant, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {profile.avatarPhoto ? (
+                <Image source={{ uri: profile.avatarPhoto }} style={{ width: 44, height: 44 }} />
+              ) : (
+                <Text style={{ fontSize: 22 }}>{profile.avatar}</Text>
+              )}
             </View>
             <View>
               <Text style={{ fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, fontFamily: F.sansSem }}>
@@ -1065,6 +1125,47 @@ export default function App() {
           </View>
         </View>
 
+        {/* Novedades */}
+        <View style={{ paddingHorizontal: 24, marginTop: 24 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Text style={{ fontFamily: F.heading, fontSize: 16, fontWeight: '600', color: theme.colors.onSurface }}>Novedades</Text>
+            <Text style={{ fontSize: 10, letterSpacing: 1.8, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, fontFamily: F.sansSem }}>DESLIZÁ</Text>
+          </View>
+          <View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                const maxOffset = contentSize.width - layoutMeasurement.width;
+                setNewsScroll(maxOffset > 0 ? Math.min(1, Math.max(0, contentOffset.x / maxOffset)) : 1);
+              }}
+              contentContainerStyle={{ gap: 12, paddingRight: 4 }}
+            >
+              {novedades.map((n) => (
+                <View key={n.title} style={{ width: 232, borderRadius: 20, backgroundColor: theme.colors.surface, padding: 16, borderWidth: 1, borderColor: theme.colors.outline, justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: theme.colors.surfaceVariant, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 18 }}>{n.emoji}</Text>
+                    </View>
+                    <View style={{ borderRadius: 999, backgroundColor: n.tag === 'PRONTO' ? 'rgba(215,254,71,0.18)' : 'rgba(215,254,71,0.12)', paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ fontSize: 8, fontWeight: '700', letterSpacing: 1, color: theme.colors.primary, fontFamily: F.sansBold }}>{n.tag}</Text>
+                    </View>
+                  </View>
+                  <View style={{ marginTop: 14 }}>
+                    <Text style={{ fontFamily: F.heading, fontSize: 15, fontWeight: '600', color: theme.colors.onSurface, letterSpacing: -0.3 }}>{n.title}</Text>
+                    <Text style={{ fontSize: 11, lineHeight: 16, color: theme.colors.onSurfaceVariant, marginTop: 6, fontFamily: F.sans }}>{n.desc}</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={{ height: 3, borderRadius: 2, backgroundColor: theme.colors.surfaceVariant, marginTop: 12, overflow: 'hidden' }}>
+              <View style={{ width: `${newsScroll * 100}%`, height: '100%', borderRadius: 2, backgroundColor: theme.colors.primary }} />
+            </View>
+          </View>
+        </View>
+
         {/* Tu recorrido */}
         <View style={{ paddingHorizontal: 24, marginTop: 28 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -1101,19 +1202,31 @@ export default function App() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <Text style={{ fontFamily: F.heading, fontSize: 16, fontWeight: '600', color: theme.colors.onSurface }}>Metas</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={{ fontSize: 11, color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>EDITAR</Text>
+              <TouchableOpacity activeOpacity={0.6} onPress={() => openMetaEditor('DISTANCIA')}>
+                <Text style={{ fontSize: 11, color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>EDITAR</Text>
+              </TouchableOpacity>
               <Ionicons name="chevron-forward" size={12} color={theme.colors.onSurfaceVariant} />
             </View>
           </View>
           <View style={{ flexDirection: 'row', gap: 12 }}>
             {metas.map((m) => (
-              <View key={m.key} style={{ flex: 1, borderRadius: 20, backgroundColor: theme.colors.surfaceVariant, padding: 16, minHeight: 126, justifyContent: 'space-between' }}>
-                <Ionicons name={m.icon} size={18} color={theme.colors.onSurfaceVariant} />
+              <TouchableOpacity
+                key={m.key}
+                activeOpacity={0.7}
+                onPress={() => openMetaEditor(m.key)}
+                style={{ flex: 1, borderRadius: 20, backgroundColor: theme.colors.surfaceVariant, padding: 16, minHeight: 126, justifyContent: 'space-between' }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Ionicons name={m.icon} size={18} color={theme.colors.onSurfaceVariant} />
+                  <Ionicons name="pencil" size={11} color={theme.colors.primary} />
+                </View>
                 <View>
                   <Text style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>{m.key}</Text>
-                  <Text style={{ fontFamily: F.heading, fontSize: 14, fontWeight: '600', marginTop: 4, color: theme.colors.onSurface }}>Sin definir</Text>
+                  <Text style={{ fontFamily: F.heading, fontSize: 15, fontWeight: '600', marginTop: 4, letterSpacing: -0.2, fontVariant: ['tabular-nums'], color: m.value ? theme.colors.primary : theme.colors.onSurface }}>
+                    {m.value || 'Sin definir'}
+                  </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         </View>
@@ -1483,8 +1596,12 @@ export default function App() {
       <Card style={{ borderRadius: 24, backgroundColor: theme.colors.surface }}>
         <Card.Content>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: theme.colors.surfaceVariant, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 32 }}>{profile.avatar}</Text>
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: theme.colors.surfaceVariant, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              {profile.avatarPhoto ? (
+                <Image source={{ uri: profile.avatarPhoto }} style={{ width: 64, height: 64 }} />
+              ) : (
+                <Text style={{ fontSize: 32 }}>{profile.avatar}</Text>
+              )}
             </View>
             <View style={{ flex: 1, marginLeft: 14 }}>
               <Text style={{ fontFamily: F.heading, fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: theme.colors.onSurface }}>{profile.name}</Text>
@@ -1559,13 +1676,39 @@ export default function App() {
             <View style={{ gap: 12 }}>
               <View>
                 <Text style={{ fontSize: 10, letterSpacing: 1.6, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, marginBottom: 8, fontFamily: F.sansSem }}>AVATAR</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: theme.colors.surfaceVariant, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {profile.avatarPhoto ? (
+                      <Image source={{ uri: profile.avatarPhoto }} style={{ width: 48, height: 48 }} />
+                    ) : (
+                      <Text style={{ fontSize: 24 }}>{profile.avatar}</Text>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={pickAvatarPhoto}
+                    style={{ flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6, backgroundColor: theme.colors.primary }}
+                  >
+                    <Ionicons name="image-outline" size={14} color={theme.colors.onPrimary} />
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: theme.colors.onPrimary, fontFamily: F.sansBold }}>SUBIR FOTO</Text>
+                  </TouchableOpacity>
+                  {profile.avatarPhoto && (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setProfile({ ...profile, avatarPhoto: null })}
+                      style={{ borderRadius: 999, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: theme.colors.outline }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: theme.colors.onSurface, fontFamily: F.sansMed }}>USAR EMOJI</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   {['🏃', '🏃‍♂️', '🏃‍♀️', '👟', '🥇', '🏆', '🏅', '🎽', '💪', '🚴', '🔥', '😄', '😎', '🤩'].map((emo) => (
                     <TouchableOpacity
                       key={emo}
                       activeOpacity={0.7}
-                      onPress={() => setProfile({ ...profile, avatar: emo })}
-                      style={{ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: profile.avatar === emo ? 'rgba(215,254,71,0.15)' : theme.colors.surfaceVariant, borderWidth: 1.5, borderColor: profile.avatar === emo ? theme.colors.primary : 'transparent' }}
+                      onPress={() => setProfile({ ...profile, avatar: emo, avatarPhoto: null })}
+                      style={{ width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: !profile.avatarPhoto && profile.avatar === emo ? 'rgba(215,254,71,0.15)' : theme.colors.surfaceVariant, borderWidth: 1.5, borderColor: !profile.avatarPhoto && profile.avatar === emo ? theme.colors.primary : 'transparent' }}
                     >
                       <Text style={{ fontSize: 22 }}>{emo}</Text>
                     </TouchableOpacity>
@@ -1882,6 +2025,77 @@ export default function App() {
                 </View>
               </View>
             )}
+
+            {metaModal && (() => {
+              const conf = META_CONF[metaModal];
+              const hasValue = metaDraft.trim() !== '';
+              return (
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,6,4,0.72)', justifyContent: 'center', padding: 20, zIndex: 64 }]}>
+                  <View style={{ borderRadius: 28, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: isDarkMode ? 'rgba(255,255,255,0.04)' : 'rgba(48,51,44,0.18)' }}>
+                    <ScrollView contentContainerStyle={{ padding: 22, paddingBottom: 26 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Ionicons name={conf.icon} size={16} color={theme.colors.primary} />
+                          <Text style={{ fontSize: 10, letterSpacing: 1.8, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, fontFamily: F.sansSem }}>EDITAR META · {metaModal}</Text>
+                        </View>
+                        <TouchableOpacity activeOpacity={0.7} onPress={() => setMetaModal(null)} hitSlop={10}>
+                          <Ionicons name="close" size={20} color={theme.colors.onSurfaceVariant} />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={{ fontFamily: F.heading, fontSize: 22, fontWeight: '700', letterSpacing: -0.5, color: theme.colors.onSurface, marginBottom: 4 }}>{metaModal}</Text>
+                      <Text style={{ fontSize: 12, color: theme.colors.onSurfaceVariant, marginBottom: 16, fontFamily: F.sans }}>{conf.subtitle}</Text>
+
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                        {conf.chips.map((c) => (
+                          <TouchableOpacity
+                            key={c}
+                            activeOpacity={0.7}
+                            onPress={() => setMetaDraft(c)}
+                            style={{ borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9, backgroundColor: metaDraft === c ? theme.colors.primary : theme.colors.surfaceVariant, borderWidth: 1, borderColor: metaDraft === c ? theme.colors.primary : theme.colors.outline }}
+                          >
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: metaDraft === c ? theme.colors.onPrimary : theme.colors.onSurface, fontFamily: F.sansBold, fontVariant: ['tabular-nums'] }}>{c}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: theme.colors.outline, backgroundColor: theme.colors.surfaceVariant, paddingHorizontal: 14, marginBottom: 18 }}>
+                        <TextInput
+                          style={{ flex: 1, paddingVertical: 12, color: theme.colors.onSurface, fontFamily: F.headingBold, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] }}
+                          keyboardType={conf.keyboard}
+                          value={metaDraft}
+                          onChangeText={setMetaDraft}
+                          placeholder={conf.placeholder}
+                          placeholderTextColor={theme.colors.onSurfaceVariant}
+                        />
+                        <Text style={{ fontSize: 11, color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>{conf.unit}</Text>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        {hasValue && (
+                          <PaperButton
+                            mode="outlined"
+                            onPress={() => { setMetaDraft(''); setMetaModal(null); }}
+                            style={{ borderRadius: 999, minHeight: 48, justifyContent: 'center' }}
+                            textColor={theme.colors.onSurfaceVariant}
+                          >
+                            BORRAR
+                          </PaperButton>
+                        )}
+                        <PaperButton
+                          mode="contained"
+                          onPress={saveMeta}
+                          style={{ flex: 1, borderRadius: 999, minHeight: 48, justifyContent: 'center' }}
+                          buttonColor={theme.colors.primary}
+                          textColor={theme.colors.onPrimary}
+                        >
+                          GUARDAR
+                        </PaperButton>
+                      </View>
+                    </ScrollView>
+                  </View>
+                </View>
+              );
+            })()}
 
             {showSaveModal && (
               <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,6,4,0.72)', justifyContent: 'center', padding: 20, zIndex: 65 }]}>
