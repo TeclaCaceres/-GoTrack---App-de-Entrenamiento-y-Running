@@ -12,5 +12,5 @@
 // funciona 100% en modo local (sin errores).
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const SUPABASE_URL = 'https://TU-PROYECTO.supabase.co';
-export const SUPABASE_ANON_KEY = 'TU-ANON-PUBLIC-KEY';
+export const SUPABASE_URL = 'https://ekngmjzfxglrcthgnlvg.supabase.co';
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrbmdtanpmeGdscmN0aGdubHZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0MDE3NTcsImV4cCI6MjEwNjk3Nzc1N30.AOdfrDPk9iNnVFW8DOkLWfFYgdHchQy3a9smCoWlznI';

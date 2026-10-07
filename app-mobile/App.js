@@ -154,7 +154,14 @@ const supabaseAvail = !!(
   !SUPABASE_ANON_KEY.includes('TU-')
 );
 const supabase = supabaseAvail
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } })
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        storage: AsyncStorage,
+      },
+    })
   : null;
 
 const META_CONF = {
@@ -207,6 +214,133 @@ const PulseRing = ({ inset = 12, color = 'rgba(215,254,71,0.32)', scaleMax = 1.0
 // Mapa estilizado del diseño (Pulse Performance): reticula punteada, ruta SVG gris+lima,
 // punto de posición con onda "ping" y pill de ritmo medio. Si hay puntos GPS reales,
 // dibuja la ruta real normalizada al viewBox del diseño.
+
+// ── Precarga: pantalla de arranque con identidad mientras cargan fuentes, SQLite y nube ──
+const PreloadScreen = ({ isDarkMode }) => {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.24] });
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });
+  const bg = isDarkMode ? '#0E0F0C' : '#F4F2EC';
+  const fg = isDarkMode ? '#F4F2EC' : '#0E0F0C';
+  return (
+    <View style={{ flex: 1, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 128, height: 128, alignItems: 'center', justifyContent: 'center' }}>
+        <Image source={require('./assets/icon.png')} style={{ width: 92, height: 92, borderRadius: 22 }} resizeMode="contain" />
+        <Animated.View
+          pointerEvents="none"
+          style={{ position: 'absolute', top: -6, left: -6, right: -6, bottom: -6, borderRadius: 999, borderWidth: 2, borderColor: '#D7FE47', opacity, transform: [{ scale }] }}
+        />
+      </View>
+      <Text style={{ fontSize: 26, fontWeight: '800', letterSpacing: -0.5, color: fg, marginTop: 20 }}>GoTrack</Text>
+      <Text style={{ fontSize: 11, letterSpacing: 2.4, color: isDarkMode ? '#92958A' : '#55604A', marginTop: 8 }}>PREPARANDO TODO…</Text>
+    </View>
+  );
+};
+
+// ── Intros: onboarding swipeable, se muestra solo la primera vez ──
+const INTRO_SLIDES = [
+  {
+    emoji: '🏃',
+    title: 'Bienvenido a GoTrack',
+    text: 'Corré, sumá kilómetros y seguí tu evolución. Todo en un solo lugar.',
+  },
+  {
+    emoji: '🗺️',
+    title: 'Mapa GPS en vivo',
+    text: 'Tu ruta se dibuja sobre un mapa real mientras corrés, incluso sin datos.',
+  },
+  {
+    emoji: '🌤️',
+    title: 'Respaldo en la nube',
+    text: 'Creá una cuenta (opcional) y tu historial te sigue en cualquier teléfono.',
+  },
+];
+
+const IntroScreen = ({ isDarkMode, onFinish }) => {
+  const scrollRef = useRef(null);
+  const [page, setPage] = useState(0);
+  const { width } = useWindowDimensions();
+  const bg = isDarkMode ? '#0E0F0C' : '#F4F2EC';
+  const fg = isDarkMode ? '#F4F2EC' : '#0E0F0C';
+  const sub = isDarkMode ? '#92958A' : '#55604A';
+  const cardBg = isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+
+  const goTo = (i) => {
+    const next = Math.max(0, Math.min(INTRO_SLIDES.length - 1, i));
+    scrollRef.current?.scrollTo({ x: next * width, animated: true });
+    setPage(next);
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: bg }}>
+      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} backgroundColor={bg} />
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20, paddingTop: 8 }}>
+          <TouchableOpacity onPress={onFinish} style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 999 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', letterSpacing: 1, color: sub }}>SALTAR</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+          style={{ flex: 1 }}
+        >
+          {INTRO_SLIDES.map((s) => (
+            <View key={s.title} style={{ width, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36 }}>
+              <View
+                style={{
+                  width: 160,
+                  height: 160,
+                  borderRadius: 80,
+                  backgroundColor: cardBg,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: 'rgba(215,254,71,0.35)',
+                }}
+              >
+                <Text style={{ fontSize: 64 }}>{s.emoji}</Text>
+              </View>
+              <Text style={{ fontSize: 26, fontWeight: '800', letterSpacing: -0.5, color: fg, fontFamily: F.sansBold, textAlign: 'center', marginTop: 34 }}>{s.title}</Text>
+              <Text style={{ fontSize: 15, lineHeight: 22, color: sub, textAlign: 'center', marginTop: 12, maxWidth: 300 }}>{s.text}</Text>
+            </View>
+          ))}
+        </ScrollView>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 34, paddingTop: 12 }}>
+          <View style={{ flexDirection: 'row', gap: 7, flex: 1 }}>
+            {INTRO_SLIDES.map((_, i) => (
+              <View key={i} style={{ width: page === i ? 22 : 7, height: 7, borderRadius: 999, backgroundColor: page === i ? '#D7FE47' : sub, opacity: page === i ? 1 : 0.4 }} />
+            ))}
+          </View>
+          {page < INTRO_SLIDES.length - 1 ? (
+            <TouchableOpacity onPress={() => goTo(page + 1)} style={{ backgroundColor: '#D7FE47', borderRadius: 999, paddingVertical: 14, paddingHorizontal: 28 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', letterSpacing: 1, color: '#0E0F0C' }}>SIGUIENTE →</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={onFinish} style={{ backgroundColor: '#D7FE47', borderRadius: 999, paddingVertical: 14, paddingHorizontal: 28 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', letterSpacing: 1, color: '#0E0F0C' }}>EMPEZAR 🏁</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+};
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -268,6 +402,15 @@ export default function App() {
   const [metaModal, setMetaModal] = useState(null);
   const [metaDraft, setMetaDraft] = useState('');
   const [newsScroll, setNewsScroll] = useState(0);
+  const [bootReady, setBootReady] = useState(false);
+  const [introDone, setIntroDone] = useState(null); // null = todavía no se leyó
+  const [user, setUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   const startTimeRef = useRef(0);
   const accumulatedTimeRef = useRef(0);
@@ -336,6 +479,22 @@ export default function App() {
 
   const initDatabase = async () => {
     deviceIdRef.current = await getDeviceId();
+    let sessionUid = null;
+    if (supabase) {
+      try {
+        const { data } = await supabase.auth.getSession();
+        sessionUid = data?.session?.user?.id ?? null;
+        setUser(data?.session?.user ?? null);
+      } catch (e) {
+        console.error('Error leyendo sesión de Supabase', e);
+      }
+    }
+    try {
+      const raw = await AsyncStorage.getItem('@gotrack_intro_done');
+      setIntroDone(raw === '1');
+    } catch (e) {
+      setIntroDone(false);
+    }
     try {
       const db = SQLite.openDatabaseSync('gotrack.db');
       dbRef.current = db;
@@ -357,14 +516,15 @@ export default function App() {
     }
     await loadDatabaseRuns();
     // Respaldo en la nube: bajá lo que haya y unilo con lo local
-    const cloud = await pullRunsFromCloud();
+    const cloud = await pullRunsFromCloud(sessionUid);
     if (cloud) {
       setHistory((prev) => mergeRunsLists(prev, cloud));
-      backfillLocalRunsToCloud(cloud);
+      backfillLocalRunsToCloud(cloud, sessionUid);
     }
+    setBootReady(true);
   };
 
-  const backfillLocalRunsToCloud = async (cloud) => {
+  const backfillLocalRunsToCloud = async (cloud, uid) => {
     if (!supabase || !cloud) return;
     const cloudIds = new Set(cloud.map((r) => r.id));
     let local = [];
@@ -381,9 +541,10 @@ export default function App() {
         if (raw) local = JSON.parse(raw);
       } catch (e) {}
     }
-    local.filter((r) => !cloudIds.has(r.id)).forEach((r) => pushRunToCloud(r));
-    if (supabase && local.filter((r) => !cloudIds.has(r.id)).length > 0) {
-      console.log(`GoTrack: subiendo ${local.filter((r) => !cloudIds.has(r.id)).length} carreras al respaldo en la nube`);
+    const pendientes = local.filter((r) => !cloudIds.has(r.id));
+    pendientes.forEach((r) => pushRunToCloud(r, uid));
+    if (pendientes.length > 0) {
+      console.log(`GoTrack: subiendo ${pendientes.length} carreras al respaldo en la nube`);
     }
   };
 
@@ -429,23 +590,31 @@ export default function App() {
   };
 
   // ── Supabase: respaldo en la nube (no bloquea si no está configurado) ──
-  const pushRunToCloud = async (run) => {
+  const pushRunToCloud = async (run, uid) => {
     if (!supabase || !deviceIdRef.current) return;
+    const owner = uid !== undefined ? uid : user ? user.id : null;
     try {
-      await supabase.from('runs').upsert({ ...run, device_id: deviceIdRef.current }, { onConflict: 'id' });
+      await supabase
+        .from('runs')
+        .upsert({ ...run, device_id: deviceIdRef.current, user_id: owner }, { onConflict: 'id' });
     } catch (e) {
       console.error('Error subiendo carrera a Supabase', e);
     }
   };
 
-  const pullRunsFromCloud = async () => {
-    if (!supabase || !deviceIdRef.current) return null;
+  const pullRunsFromCloud = async (uid) => {
+    if (!supabase) return null;
+    const selector = uid || (user ? user.id : deviceIdRef.current);
+    if (!selector) return null;
     try {
-      const { data } = await supabase
+      const query = supabase
         .from('runs')
         .select('*')
-        .eq('device_id', deviceIdRef.current)
         .order('date', { ascending: false });
+      const res = uid || user
+        ? await query.eq('user_id', selector)
+        : await query.eq('device_id', selector);
+      const { data } = res;
       if (!data) return null;
       return data.map(({ device_id, synced_at, ...run }) => run);
     } catch (e) {
@@ -457,7 +626,11 @@ export default function App() {
   const deleteRunInCloud = async (id) => {
     if (!supabase) return;
     try {
-      await supabase.from('runs').delete().eq('id', id).eq('device_id', deviceIdRef.current);
+      let q = supabase.from('runs').delete().eq('id', id);
+      q = user
+        ? q.eq('user_id', user.id)
+        : q.eq('device_id', deviceIdRef.current);
+      await q;
     } catch (e) {
       console.error('Error borrando en Supabase', e);
     }
@@ -468,6 +641,90 @@ export default function App() {
     (cloud || []).forEach((r) => byId.set(r.id, r));
     (local || []).forEach((r) => byId.set(r.id, r)); // local gana ante el mismo id
     return Array.from(byId.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+  };
+
+  // ── Supabase: sesión opcional (la app funciona igual sin cuenta) ──
+  useEffect(() => {
+    if (!supabase) return;
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  const claimDeviceRuns = async (userId) => {
+    if (!supabase || !userId || !deviceIdRef.current) return;
+    try {
+      const { data } = await supabase
+        .from('runs')
+        .select('id')
+        .eq('device_id', deviceIdRef.current)
+        .is('user_id', null);
+      if (data && data.length > 0) {
+        await supabase
+          .from('runs')
+          .update({ user_id: userId })
+          .eq('device_id', deviceIdRef.current)
+          .is('user_id', null);
+      }
+    } catch (e) {
+      console.error('Error reclamando carreras a la cuenta', e);
+    }
+  };
+
+  const handleAuth = async () => {
+    if (!supabase) {
+      Alert.alert('Nube no configurada', 'Completá SUPABASE_URL y SUPABASE_ANON_KEY en supabase-config.js');
+      return;
+    }
+    setAuthBusy(true);
+    setAuthError('');
+    try {
+      const email = authEmail.trim().toLowerCase();
+      const password = authPassword;
+      if (!email || !/^\S+@\S+\.\S+$/.test(email) || password.length < 6) {
+        setAuthError('Ingresá un email válido y una contraseña de al menos 6 caracteres.');
+        setAuthBusy(false);
+        return;
+      }
+      const res =
+        authMode === 'login'
+          ? await supabase.auth.signInWithPassword({ email, password })
+          : await supabase.auth.signUp({ email, password });
+      if (res.error) {
+        setAuthError(res.error.message);
+      } else if (authMode === 'login' || res.data.session) {
+        const uid = res.data.session.user.id;
+        setUser(res.data.session.user);
+        claimDeviceRuns(uid).catch(() => {});
+        const cloud = await pullRunsFromCloud(uid);
+        if (cloud) setHistory((prev) => mergeRunsLists(prev, cloud));
+        setAuthEmail('');
+        setAuthPassword('');
+        setShowAuthModal(false);
+      } else {
+        // signUp con confirmación por email habilitada
+        Alert.alert('Revisá tu email', 'Te mandamos un link de confirmación. Confirmalo y después iniciá sesión desde acá.');
+        setAuthMode('login');
+      }
+    } catch (e) {
+      setAuthError('No se pudo conectar. Revisá la conexión e intentá de nuevo.');
+    }
+    setAuthBusy(false);
+  };
+
+  const handleSignOut = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setUser(null);
+    // El historial queda como está en el dispositivo; al volver a entrar se re-sincroniza con la cuenta.
+  };
+
+  const finishIntros = async () => {
+    try {
+      await AsyncStorage.setItem('@gotrack_intro_done', '1');
+    } catch (e) {}
+    setIntroDone(true);
   };
 
   const computeElapsed = () =>
@@ -1494,12 +1751,16 @@ export default function App() {
         <Text style={{ fontFamily: F.headingBold, fontSize: 24, fontWeight: '700', letterSpacing: -0.6, color: theme.colors.onSurface }}>Herramientas</Text>
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: supabaseAvail ? '#D7FE47' : theme.colors.outline }} />
         <Text style={{ fontSize: 10, letterSpacing: 1, color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>
-          {supabaseAvail ? 'RESPALDO EN LA NUBE ACTIVO' : 'MODO LOCAL · SIN NUBE'}
+          {!supabaseAvail
+            ? 'MODO LOCAL · SIN NUBE'
+            : user
+              ? `RESPALDO EN LA NUBE · ${user.email}`
+              : 'RESPALDO EN LA NUBE ACTIVO (dispositivo)'}
         </Text>
-        {supabaseAvail && <Ionicons name="cloud-done-outline" size={14} color="#D7FE47" />}
+        {supabaseAvail && <Ionicons name={user ? 'cloud-done' : 'cloud-done-outline'} size={14} color="#D7FE47" />}
       </View>
 
       {/* Estadísticas de rendimiento */}
@@ -1788,6 +2049,43 @@ export default function App() {
         </Card.Content>
       </Card>
 
+      <Card style={{ borderRadius: 24, backgroundColor: theme.colors.surface, marginTop: 18, borderWidth: 1, borderColor: theme.colors.outline }}>
+        <Card.Content>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <Text style={{ fontSize: 10, letterSpacing: 1.6, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, fontFamily: F.sansSem }}>MI CUENTA</Text>
+              <Text style={{ fontSize: 13, color: theme.colors.onSurface, marginTop: 4, fontFamily: F.sansMed }}>
+                {user ? user.email : 'Sin sesión'}
+              </Text>
+              <Text style={{ fontSize: 11, lineHeight: 16, color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
+                {user
+                  ? 'Historial sincronizado con tu cuenta'
+                  : 'Opcional: el historial queda en este dispositivo'}
+              </Text>
+            </View>
+            <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: user ? 'rgba(215,254,71,0.12)' : theme.colors.surfaceVariant, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name={user ? 'cloud-done' : 'cloud-offline-outline'} size={22} color={theme.colors.primary} />
+            </View>
+          </View>
+          {user ? (
+            <PaperButton mode="outlined" onPress={handleSignOut} style={{ borderRadius: 999, marginTop: 16 }} textColor={theme.colors.onSurface} icon={({ color, size }) => <Ionicons name="log-out-outline" size={size} color={color} />}>
+              Cerrar sesión
+            </PaperButton>
+          ) : (
+            <PaperButton
+              mode="contained"
+              onPress={() => { setAuthMode('login'); setAuthError(''); setShowAuthModal(true); }}
+              style={{ borderRadius: 999, marginTop: 16 }}
+              buttonColor={theme.colors.primary}
+              textColor={theme.colors.onPrimary}
+              icon={({ color, size }) => <Ionicons name="person-circle-outline" size={size} color={color} />}
+            >
+              Iniciar sesión / Crear cuenta
+            </PaperButton>
+          )}
+        </Card.Content>
+      </Card>
+
       <View style={{ marginTop: 28, marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <Text style={{ fontFamily: F.headingBold, fontSize: 18, fontWeight: '700', letterSpacing: -0.4, color: theme.colors.onSurface }}>Historial</Text>
         <View style={{ borderRadius: 999, backgroundColor: theme.colors.surfaceVariant, paddingHorizontal: 10, paddingVertical: 3 }}>
@@ -1867,8 +2165,18 @@ export default function App() {
       ? `${String(Math.floor(lockPaceRaw)).padStart(2, '0')}:${String(Math.round((lockPaceRaw % 1) * 60)).padStart(2, '0')}`
       : '--:--';
 
-  if (!fontsLoaded) {
-    return <View style={{ flex: 1, backgroundColor: PALETTE.bg }} />;
+  if (!fontsLoaded || !bootReady) {
+    return <PreloadScreen isDarkMode={isDarkMode} />;
+  }
+
+  if (introDone === false) {
+    return (
+      <PaperProvider theme={theme}>
+        <SafeAreaProvider>
+          <IntroScreen isDarkMode={isDarkMode} onFinish={finishIntros} />
+        </SafeAreaProvider>
+      </PaperProvider>
+    );
   }
 
   return (
@@ -2219,6 +2527,85 @@ export default function App() {
                         GUARDAR
                       </PaperButton>
                     </View>
+                  </ScrollView>
+                </Card>
+              </View>
+            )}
+
+            {showAuthModal && (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(5,6,4,0.72)', justifyContent: 'center', padding: 20, zIndex: 66 }]}>
+                <Card style={{ borderRadius: 28, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: 'rgba(255,255,255,0.04)' }}>
+                  <ScrollView contentContainerStyle={{ padding: 22, paddingBottom: 26 }}>
+                    <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                      <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(215,254,71,0.12)', alignItems: 'center', justifyContent: 'center' }}>
+                        <Ionicons name={user ? 'cloud-done' : 'person-circle'} size={28} color={theme.colors.primary} />
+                      </View>
+                    </View>
+                    <Text style={{ fontFamily: F.headingBold, fontSize: 22, fontWeight: '700', letterSpacing: -0.5, color: theme.colors.onSurface, textAlign: 'center' }}>
+                      MI CUENTA
+                    </Text>
+                    <Text style={{ fontSize: 12, lineHeight: 18, color: theme.colors.onSurfaceVariant, textAlign: 'center', marginTop: 6, marginBottom: 16 }}>
+                      {user
+                        ? `Sesión iniciada como ${user.email}. Tu historial viaja con la cuenta.`
+                        : 'El login es opcional. Sin cuenta, los datos se guardan en este dispositivo.'}
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', backgroundColor: theme.colors.surfaceVariant, borderRadius: 999, padding: 4, marginBottom: 16 }}>
+                      {['login', 'signup'].map((mode) => (
+                        <TouchableOpacity
+                          key={mode}
+                          onPress={() => { setAuthMode(mode); setAuthError(''); }}
+                          style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: authMode === mode ? theme.colors.primary : 'transparent' }}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: authMode === mode ? theme.colors.onPrimary : theme.colors.onSurfaceVariant, fontFamily: F.sansBold }}>
+                            {mode === 'login' ? 'INICIAR SESIÓN' : 'CREAR CUENTA'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <TextInput
+                      style={{ borderRadius: 16, padding: 12, backgroundColor: theme.colors.surfaceVariant, color: theme.colors.onSurface, borderWidth: 1, borderColor: theme.colors.outline, marginBottom: 10, fontFamily: F.sans }}
+                      placeholder="Email"
+                      placeholderTextColor={theme.colors.onSurfaceVariant}
+                      value={authEmail}
+                      onChangeText={setAuthEmail}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                    />
+                    <TextInput
+                      style={{ borderRadius: 16, padding: 12, backgroundColor: theme.colors.surfaceVariant, color: theme.colors.onSurface, borderWidth: 1, borderColor: theme.colors.outline, marginBottom: 12, fontFamily: F.sans }}
+                      placeholder="Contraseña (mínimo 6 caracteres)"
+                      placeholderTextColor={theme.colors.onSurfaceVariant}
+                      value={authPassword}
+                      onChangeText={setAuthPassword}
+                      secureTextEntry
+                      autoCapitalize="none"
+                    />
+
+                    {authError ? (
+                      <Text style={{ fontSize: 12, color: theme.colors.error, textAlign: 'center', marginBottom: 10 }}>⚠️ {authError}</Text>
+                    ) : null}
+
+                    <PaperButton
+                      mode="contained"
+                      onPress={handleAuth}
+                      disabled={authBusy}
+                      style={{ borderRadius: 999, minHeight: 48, justifyContent: 'center' }}
+                      buttonColor={theme.colors.primary}
+                      textColor={theme.colors.onPrimary}
+                    >
+                      {authBusy ? 'PROCESANDO…' : authMode === 'login' ? 'INGRESAR' : 'CREAR CUENTA'}
+                    </PaperButton>
+                    <PaperButton
+                      mode="outlined"
+                      onPress={() => setShowAuthModal(false)}
+                      style={{ borderRadius: 999, minHeight: 48, justifyContent: 'center', marginTop: 10 }}
+                      textColor={theme.colors.onSurface}
+                    >
+                      CERRAR
+                    </PaperButton>
                   </ScrollView>
                 </Card>
               </View>
