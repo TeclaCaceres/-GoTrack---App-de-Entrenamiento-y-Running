@@ -292,7 +292,7 @@ export default function App() {
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
@@ -1493,88 +1493,6 @@ export default function App() {
             textColor={theme.colors.primary}
           >
             Exportar todo ({history.length})
-          </PaperButton>
-        </Card.Content>
-      </Card>
-
-      <Card style={{ borderRadius: 24, backgroundColor: theme.colors.surface, marginBottom: 12, borderWidth: 1, borderColor: theme.colors.outline }}>
-        <Card.Content>
-          <Text style={{ fontFamily: F.heading, fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: theme.colors.onSurface }}>Sincronización</Text>
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>Enviá tu historial al servidor GoTrack.</Text>
-          <PaperButton
-            mode="outlined"
-            icon={({ color, size }) => <Ionicons name="cloud-upload-outline" size={size} color={color} />}
-            onPress={async () => {
-              try {
-                const res = await fetch('http://192.168.0.6:3000/api/carreras', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(history),
-                });
-                Alert.alert('Sincronizar', res.ok ? `✅ ${history.length} carreras enviadas` : 'Error al sincronizar');
-              } catch (e) {
-                Alert.alert('Sincronizar', 'No se pudo conectar al servidor');
-              }
-            }}
-            style={{ borderRadius: 999, alignSelf: 'flex-start' }}
-            textColor={theme.colors.primary}
-          >
-            Sincronizar ahora
-          </PaperButton>
-        </Card.Content>
-      </Card>
-
-      <Card style={{ borderRadius: 24, backgroundColor: theme.colors.surface, marginBottom: 12, borderWidth: 1, borderColor: theme.colors.outline }}>
-        <Card.Content>
-          <Text style={{ fontFamily: F.heading, fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: theme.colors.onSurface }}>Cuenta regresiva</Text>
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>Tiempo de preparación antes de arrancar.</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {[0, 3, 5, 10].map((val) => (
-              <PaperButton
-                key={val}
-                mode={prepTime === val ? 'contained' : 'outlined'}
-                onPress={() => setPrepTime(val)}
-                style={{ flex: 1, borderRadius: 999 }}
-                buttonColor={prepTime === val ? theme.colors.primary : undefined}
-                textColor={prepTime === val ? theme.colors.onPrimary : theme.colors.onSurface}
-              >
-                {val}s
-              </PaperButton>
-            ))}
-          </View>
-        </Card.Content>
-      </Card>
-
-      <Card style={{ borderRadius: 24, backgroundColor: theme.colors.surface, marginBottom: 12, borderWidth: 1, borderColor: theme.colors.outline }}>
-        <Card.Content>
-          <Text style={{ fontFamily: F.heading, fontSize: 17, fontWeight: '600', letterSpacing: -0.3, color: theme.colors.onSurface }}>Datos</Text>
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 12 }}>Borrá todo el historial local. Esta acción no se puede deshacer.</Text>
-          <PaperButton
-            mode="outlined"
-            onPress={() => {
-              Alert.alert('Borrar todo', '¿Seguro? Se borran todas las carreras.', [
-                { text: 'Cancelar', style: 'cancel' },
-                {
-                  text: 'Borrar todo',
-                  style: 'destructive',
-                  onPress: async () => {
-                    if (dbRef.current) {
-                      try {
-                        dbRef.current.execSync('DELETE FROM runs;');
-                      } catch (e) {
-                        console.error('Error borrando en SQLite', e);
-                      }
-                    }
-                    setHistory([]);
-                    persistRunsFallback([]);
-                  },
-                },
-              ]);
-            }}
-            style={{ borderRadius: 999, alignSelf: 'flex-start', borderColor: theme.colors.error }}
-            textColor={theme.colors.error}
-          >
-            Borrar historial completo
           </PaperButton>
         </Card.Content>
       </Card>
