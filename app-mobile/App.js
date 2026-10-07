@@ -23,6 +23,8 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import * as Speech from 'expo-speech';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
+import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config';
 import { Pedometer } from 'expo-sensors';
 import * as SQLite from 'expo-sqlite';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -144,6 +146,17 @@ const LIGHT = {
 
 const ACTIVE_WORKOUT_KEY = '@gotrack_active_workout';
 
+// ── Supabase (respaldo en la nube) ───────────────────────────────────────────
+const supabaseAvail = !!(
+  SUPABASE_URL &&
+  SUPABASE_ANON_KEY &&
+  SUPABASE_URL.includes('.supabase.co') &&
+  !SUPABASE_ANON_KEY.includes('TU-')
+);
+const supabase = supabaseAvail
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } })
+  : null;
+
 const META_CONF = {
   DISTANCIA: { icon: 'navigate-outline', subtitle: 'Cuántos km por semana', unit: 'km', chips: ['10', '20', '30', '40', '50'], placeholder: 'Ej: 20', keyboard: 'numeric' },
   RITMO: { icon: 'speedometer-outline', subtitle: 'Ritmo objetivo (mm:ss)', unit: '/km', chips: ['04:30', '05:00', '05:30', '06:00'], placeholder: 'Ej: 05:30', keyboard: 'default' },
@@ -262,6 +275,7 @@ export default function App() {
   const locationSubRef = useRef(null);
   const pedometerSubRef = useRef(null);
   const webViewRef = useRef(null);
+  const deviceIdRef = useRef(null);
   const dbRef = useRef(null);
   const totalStepsRef = useRef(0);
   const lastPedometerStepsRef = useRef(null);
@@ -321,6 +335,7 @@ export default function App() {
   };
 
   const initDatabase = async () => {
+    deviceIdRef.current = await getDeviceId();
     try {
       const db = SQLite.openDatabaseSync('gotrack.db');
       dbRef.current = db;
@@ -340,7 +355,12 @@ export default function App() {
       console.error('SQLite no disponible, usando AsyncStorage', e);
       dbRef.current = null;
     }
-    loadDatabaseRuns();
+    await loadDatabaseRuns();
+    // Respaldo en la nube: bajá lo que haya y unilo con lo local
+    const cloud = await pullRunsFromCloud();
+    if (cloud && cloud.length > 0) {
+      setHistory((prev) => mergeRunsLists(prev, cloud));
+    }
   };
 
   const loadDatabaseRuns = async () => {
@@ -369,6 +389,61 @@ export default function App() {
     } catch (e) {
       console.error('Error guardando en AsyncStorage', e);
     }
+  };
+
+  const getDeviceId = async () => {
+    try {
+      let id = await AsyncStorage.getItem('@gotrack_device_id');
+      if (!id) {
+        id = `dev-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        await AsyncStorage.setItem('@gotrack_device_id', id);
+      }
+      return id;
+    } catch (e) {
+      return `dev-${Date.now().toString(36)}`;
+    }
+  };
+
+  // ── Supabase: respaldo en la nube (no bloquea si no está configurado) ──
+  const pushRunToCloud = async (run) => {
+    if (!supabase || !deviceIdRef.current) return;
+    try {
+      await supabase.from('runs').upsert({ ...run, device_id: deviceIdRef.current }, { onConflict: 'id' });
+    } catch (e) {
+      console.error('Error subiendo carrera a Supabase', e);
+    }
+  };
+
+  const pullRunsFromCloud = async () => {
+    if (!supabase || !deviceIdRef.current) return null;
+    try {
+      const { data } = await supabase
+        .from('runs')
+        .select('*')
+        .eq('device_id', deviceIdRef.current)
+        .order('date', { ascending: false });
+      if (!data) return null;
+      return data.map(({ device_id, synced_at, ...run }) => run);
+    } catch (e) {
+      console.error('Error bajando historial de Supabase', e);
+      return null;
+    }
+  };
+
+  const deleteRunInCloud = async (id) => {
+    if (!supabase) return;
+    try {
+      await supabase.from('runs').delete().eq('id', id).eq('device_id', deviceIdRef.current);
+    } catch (e) {
+      console.error('Error borrando en Supabase', e);
+    }
+  };
+
+  const mergeRunsLists = (local, cloud) => {
+    const byId = new Map();
+    (cloud || []).forEach((r) => byId.set(r.id, r));
+    (local || []).forEach((r) => byId.set(r.id, r)); // local gana ante el mismo id
+    return Array.from(byId.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
   };
 
   const computeElapsed = () =>
@@ -631,6 +706,8 @@ export default function App() {
       persistRunsFallback(nuevoHistorial);
     }
 
+    pushRunToCloud({ id, date, duration, surface, feeling, notes, steps: stepCount, locations: locationsJson });
+
     setNotes('');
     setElapsedTime(0);
     setStepCount(0);
@@ -653,6 +730,7 @@ export default function App() {
         text: 'Eliminar',
         style: 'destructive',
         onPress: async () => {
+          deleteRunInCloud(id);
           if (dbRef.current) {
             try {
               dbRef.current.runSync('DELETE FROM runs WHERE id = ?', [id]);
@@ -1390,6 +1468,14 @@ export default function App() {
       <View style={{ paddingTop: 24, paddingBottom: 18 }}>
         <Text style={{ fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: theme.colors.onSurfaceVariant, fontFamily: F.sansSem }}>ACTIVIDAD · DATOS</Text>
         <Text style={{ fontFamily: F.headingBold, fontSize: 24, fontWeight: '700', letterSpacing: -0.6, color: theme.colors.onSurface }}>Herramientas</Text>
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: supabaseAvail ? '#D7FE47' : theme.colors.outline }} />
+        <Text style={{ fontSize: 10, letterSpacing: 1, color: theme.colors.onSurfaceVariant, fontFamily: F.sansMed }}>
+          {supabaseAvail ? 'RESPALDO EN LA NUBE ACTIVO' : 'MODO LOCAL · SIN NUBE'}
+        </Text>
+        {supabaseAvail && <Ionicons name="cloud-done-outline" size={14} color="#D7FE47" />}
       </View>
 
       {/* Estadísticas de rendimiento */}

@@ -8,6 +8,7 @@
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@supabase/supabase-js": "^2.117.3",
     "@tamagui/config": "^2.7.7",
     "expo": "~57.0.26",
     "expo-audio": "~57.0.5",
