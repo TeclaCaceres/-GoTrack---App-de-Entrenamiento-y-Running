@@ -590,13 +590,20 @@ export default function App() {
   };
 
   // ── Supabase: respaldo en la nube (no bloquea si no está configurado) ──
+  // El secret por dispositivo viaja en un header: sin él, RLS no muestra ni
+  // toca las filas del modo dispositivo (ver supabase/security_device_secret.sql).
+  const deviceHeaders = () => ({ 'x-device-secret': deviceIdRef.current || '' });
+
   const pushRunToCloud = async (run, uid) => {
     if (!supabase || !deviceIdRef.current) return;
     const owner = uid !== undefined ? uid : user ? user.id : null;
     try {
       await supabase
         .from('runs')
-        .upsert({ ...run, device_id: deviceIdRef.current, user_id: owner }, { onConflict: 'id' });
+        .upsert(
+          { ...run, device_id: deviceIdRef.current, device_secret: deviceIdRef.current, user_id: owner },
+          { onConflict: 'id', headers: deviceHeaders() }
+        );
     } catch (e) {
       console.error('Error subiendo carrera a Supabase', e);
     }
@@ -609,14 +616,14 @@ export default function App() {
     try {
       const query = supabase
         .from('runs')
-        .select('*')
+        .select('*', { headers: deviceHeaders() })
         .order('date', { ascending: false });
       const res = uid || user
         ? await query.eq('user_id', selector)
         : await query.eq('device_id', selector);
       const { data } = res;
       if (!data) return null;
-      return data.map(({ device_id, synced_at, ...run }) => run);
+      return data.map(({ device_id, synced_at, device_secret, ...run }) => run);
     } catch (e) {
       console.error('Error bajando historial de Supabase', e);
       return null;
@@ -626,7 +633,7 @@ export default function App() {
   const deleteRunInCloud = async (id) => {
     if (!supabase) return;
     try {
-      let q = supabase.from('runs').delete().eq('id', id);
+      let q = supabase.from('runs').delete({ headers: deviceHeaders() }).eq('id', id);
       q = user
         ? q.eq('user_id', user.id)
         : q.eq('device_id', deviceIdRef.current);
@@ -657,13 +664,13 @@ export default function App() {
     try {
       const { data } = await supabase
         .from('runs')
-        .select('id')
+        .select('id', { headers: deviceHeaders() })
         .eq('device_id', deviceIdRef.current)
         .is('user_id', null);
       if (data && data.length > 0) {
         await supabase
           .from('runs')
-          .update({ user_id: userId })
+          .update({ user_id: userId }, { headers: deviceHeaders() })
           .eq('device_id', deviceIdRef.current)
           .is('user_id', null);
       }
