@@ -5,7 +5,8 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#0E0F0C",
     "ios": {
       "supportsTablet": true
     },
@@ -24,7 +25,8 @@
     "plugins": [
       "expo-sqlite",
       "expo-audio",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-font"
     ],
     "extra": {
       "eas": {
