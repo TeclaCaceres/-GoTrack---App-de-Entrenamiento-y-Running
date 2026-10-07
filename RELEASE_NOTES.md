@@ -56,4 +56,4 @@ Esto es todo lo que cambia en esta versión:
 
 ## 🔗 Descarga del APK
 
-👉 [Descargar APK de GoTrack](https://expo.dev/artifacts/eas/PENDIENTE-DE-ULTIMO-BUILD.apk)
+👉 [Descargar APK de GoTrack](https://expo.dev/artifacts/eas/zFI6li87Hsji1h01ZwjJdf7kvhkrL3kX2Ki4V9LmDN8.apk)

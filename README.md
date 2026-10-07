@@ -6,7 +6,7 @@ App de entrenamiento y running con identidad **Pulse Performance**. Track de car
 
 Podés instalar el **APK** sobre la versión que ya tenés (mismo firmado, no hace falta desinstalar):
 
-👉 [Descargar APK de GoTrack](https://expo.dev/artifacts/eas/PENDIENTE-DEL-ULTIMO-BUILD.apk)
+👉 [Descargar APK de GoTrack](https://expo.dev/artifacts/eas/zFI6li87Hsji1h01ZwjJdf7kvhkrL3kX2Ki4V9LmDN8.apk)
 
 > Si el instalador avisa "app not installed", desinstalá la anterior e instalá esta (tu historial se restaura solo desde la nube).
 
